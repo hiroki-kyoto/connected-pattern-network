@@ -1,2 +1,2 @@
-git add --all && git commit -a -m '$1' && git push cpn master
+git add --all && git commit -a -m 'new commit' && git push cpn master
 
