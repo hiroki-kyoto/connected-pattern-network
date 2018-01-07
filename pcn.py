@@ -1,22 +1,32 @@
 # Pattern Connection Network
 import numpy as np
 
+
+##### DATA FORMAT : NCHW,
+# N: NUMBER OF IMAGE
+# C: CHANNEL OF IMAGE
+# H: HEIGHT OF IMAGE
+# W: WIDTH OF IMAGE
+
 # convert maps to patches
 # @maps: maps of current layer
 # @patches: patches to fill
 # @ksize: kernel size, [height,width]
+# [maps] are in format of CHW,
+# however patches are in format of HWC.
+
 def m2p(maps, patches, ksize):
     _m_shape = maps.shape
     _p_shape = patches.shape
     assert len(_m_shape)==3
     assert len(_p_shape)==3
     assert len(ksize)==2
-    assert _m_shape[0]-ksize[0]+1==_p_shape[0]
-    assert _m_shape[1]-ksize[1]+1==_p_shape[1]
-    assert _m_shape[2]*ksize[0]*ksize[1]==_p_shape[2]
+    assert _m_shape[1]-ksize[0]+1==_p_shape[0]
+    assert _m_shape[2]-ksize[1]+1==_p_shape[1]
+    assert _m_shape[0]*ksize[0]*ksize[1]==_p_shape[2]
     _kh = ksize[0]
     _kw = ksize[1]
-    _kd = _m_shape[-1]
+    _kd = _m_shape[0]
     _h = _p_shape[0]
     _w = _p_shape[1]
     for _y in xrange(_h): # y pixel
@@ -25,7 +35,38 @@ def m2p(maps, patches, ksize):
                 for _kx in xrange(_kw): # kernel x
                     for _kz in xrange(_kd): # kernel depth
                         patches[_y,_x,_kd*(_ky*_kw+_kx)+_kz] = \
-                        maps[_y+_ky,_x+_kx,_kz]
+                        maps[_kz,_y+_ky,_x+_kx]
+
+# convolution operation
+# @maps : the tensor to be returned for next layer input
+# @patches : patches of last layer maps
+# @kernel : convolution kernels
+# notice: no memory allocation allowed on this function
+# [maps] are in format of CHW, however [patches] are in
+# format of HWC, [kernels] is NW formatted.
+
+def conv(maps, patches, kernels):
+    _m_shape = maps.shape
+    _p_shape = patches.shape
+    _k_shape = kernels.shape
+
+    assert _m_shape[1]==_p_shape[0]
+    assert _m_shape[2]==_p_shape[1]
+    assert _m_shape[0]==_k_shape[0]
+    assert _p_shape[2]==_k_shape[1]
+
+    _nk = _k_shape[0] # number of kernel
+
+    for _i in xrange(_nk):
+        maps[_i] = patches * kernels[_i]
+    # only maps are modified
+
+# update the patterns according to self organizing map theory
+def update_patterns(patterns, maps, learning_rate, radius):
+    # searching for wining patterns for each patch
+    # namely, one winner pattern for one patch
+    _max = np.argmax(maps, axis=0)
+
 
 ####### Pattern Connection Network #########
 # Train network layer by layer
@@ -44,14 +85,14 @@ class pcn(object):
 
         # default settings for pcn
         if x_dim is None:
-            x_dim = [256, 256, 3]
+            x_dim = [3,256,256] # CHW format
         if y_dim is None:
             y_dim = [6]
-        if pattern_dims is None:
+        if pattern_dims is None: # NHWC format
             pattern_dims = [
-                [3, 3, 32],
-                [3, 3, 16],
-                [3, 3, 8]
+                [32, 3, 3],
+                [16, 3, 3],
+                [8, 3, 3]
             ]
 
         self.x = np.zeros(x_dim)
@@ -69,14 +110,14 @@ class pcn(object):
             assert len(pattern_dims[i]) == 3
             # complete the dimension for each pattern
             if i==0:
-                pattern_dims[i].insert(0, x_dim[-1])
+                pattern_dims[i].append(x_dim[0])
             else:
-                pattern_dims[i].insert(0, pattern_dims[i-1][-1])
+                pattern_dims[i].append(pattern_dims[i-1][0])
             # create pattern variables with random values
-            _pattern_len = pattern_dims[i][0]*\
-                           pattern_dims[i][1]*\
-                           pattern_dims[i][2]
-            _pattern_num = pattern_dims[i][-1]
+            _pattern_len = pattern_dims[i][1]*\
+                           pattern_dims[i][2]*\
+                           pattern_dims[i][3]
+            _pattern_num = pattern_dims[i][0]
             # patterns will be normalized to [0,1] using polarization function
             self.patterns.append(
                 np.random.uniform(
@@ -87,17 +128,16 @@ class pcn(object):
             )
             # only valid convolution is supported, recompute its map width and height
             if i==0:
-                _h = x_dim[0] - pattern_dims[i][1] + 1
-                _w = x_dim[1] - pattern_dims[i][2] + 1
+                _h = x_dim[1] - pattern_dims[i][1] + 1
+                _w = x_dim[2] - pattern_dims[i][2] + 1
             else:
-                _h = self.maps[-1].shape[0] - pattern_dims[i][1] + 1
-                _w = self.maps[-1].shape[1] - pattern_dims[i][2] + 1
+                _h = self.maps[-1].shape[1] - pattern_dims[i][1] + 1
+                _w = self.maps[-1].shape[2] - pattern_dims[i][2] + 1
             # pre-allocation for patches, to avoid possible allocation error
             # during network training or prediction
-            _vec_len = _pattern_len
             self.patches.append(np.zeros(_h, _w, _pattern_len))
             # maps = patches * patterns
-            self.maps.append(np.zeros([_h, _w, _pattern_num]))
+            self.maps.append(np.zeros([_pattern_num, _h, _w]))
             # pattern counter update
             _sum_of_patterns += _pattern_num
 
