@@ -65,7 +65,15 @@ def conv(maps, patches, kernels):
 def update_patterns(patterns, maps, learning_rate, radius):
     # searching for wining patterns for each patch
     # namely, one winner pattern for one patch
-    _max = np.argmax(maps, axis=0)
+    _max_idx = np.argmax(maps, axis=0)
+    #_max_map = np.max(maps, axis=0)
+    # update patterns with each patch
+    _w = maps.shape[2]
+    _h = maps.shape[1]
+    for _y in xrange(_h):
+        for _x in xrange(_w):
+            for _d in xrange(-radius, radius+1):
+                maps[_d + _max_idx[_y,_x], _y, _x] #####
 
 
 ####### Pattern Connection Network #########
@@ -79,7 +87,8 @@ class pcn(object):
             y_dim=None,
             pattern_dims=None,
             learning_rate=0.01,
-            decay_rate=0.01
+            decay_rate=0.01,
+            radius=3
     ):
         print 'init'
 
@@ -158,6 +167,7 @@ class pcn(object):
         self.p_dim = pattern_dims # [D,H,W,P] // depth,height,width,pattern
         self.learning_rate = learning_rate
         self.decay_rate = decay_rate
+        self.radius = radius
 
     def data(self, im_dir):
         print 'data'
